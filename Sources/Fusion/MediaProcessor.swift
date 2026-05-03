@@ -30,43 +30,6 @@ struct MediaProcessor {
             return (-1, error.localizedDescription)
         }
     }
-    
-    func cleanItalics(_ text: String) -> String {
-        var t = text.replacingOccurrences(of: "\\N", with: "\n").replacingOccurrences(of: "\\\\N", with: "\n")
-        t = t.replacingOccurrences(of: "{\\i1}", with: "").replacingOccurrences(of: "{\\i0}", with: "")
-        let regex = try? NSRegularExpression(pattern: "\\{[^\\}]*\\}")
-        t = regex?.stringByReplacingMatches(in: t, range: NSRange(t.startIndex..., in: t), withTemplate: "") ?? t
-        return "<i>\(t.trimmingCharacters(in: .whitespacesAndNewlines))</i>"
-    }
-
-    func assToSrt(assPath: URL, srtPath: URL) {
-        guard let content = try? String(contentsOf: assPath, encoding: .utf8) else {
-            runCommand(getBinPath("ffmpeg"), args: ["-y", "-i", assPath.path, srtPath.path])
-            return
-        }
-        let lines = content.components(separatedBy: .newlines)
-        var out = ""; var n = 1
-        for line in lines where line.hasPrefix("Dialogue:") {
-            let parts = line.components(separatedBy: ",")
-            if parts.count < 10 { continue }
-            let s_t = parts[1].replacingOccurrences(of: ".", with: ",") + "0"
-            let e_t = parts[2].replacingOccurrences(of: ".", with: ",") + "0"
-            var txt = parts[9...].joined(separator: ",").trimmingCharacters(in: .whitespaces)
-            
-            if parts[3].lowercased().contains("italic") || txt.contains("{\\i1}") {
-                txt = cleanItalics(txt)
-            } else {
-                txt = txt.replacingOccurrences(of: "\\N", with: "\n")
-                let regex = try? NSRegularExpression(pattern: "\\{[^\\}]*\\}")
-                txt = regex?.stringByReplacingMatches(in: txt, range: NSRange(txt.startIndex..., in: txt), withTemplate: "").trimmingCharacters(in: .whitespaces) ?? txt
-            }
-            if !txt.isEmpty {
-                out += "\(n)\n0\(s_t.dropLast()) --> 0\(e_t.dropLast())\n\(txt)\n\n"
-                n += 1
-            }
-        }
-        try? out.write(to: srtPath, atomically: true, encoding: .utf8)
-    }
 
     func run() async {
         let fm = FileManager.default
@@ -90,7 +53,10 @@ struct MediaProcessor {
         
         let streams = info["streams"] as? [[String: Any]] ?? []
         let chapters = info["chapters"] as? [[String: Any]] ?? []
-        let hasAudio = streams.contains { ($0["codec_type"] as? String) == "audio" }
+        
+        // Ses izlerini detaylıca filtrele
+        let audioStreams = streams.filter { ($0["codec_type"] as? String) == "audio" }
+        let hasAudio = !audioStreams.isEmpty
         let isHevc = streams.contains { ($0["codec_type"] as? String) == "video" && ($0["codec_name"] as? String) == "hevc" }
         let intSubs = streams.filter { ($0["codec_type"] as? String) == "subtitle" }
         
@@ -99,7 +65,7 @@ struct MediaProcessor {
         
         for (i, sub) in intSubs.enumerated() {
             let tags = sub["tags"] as? [String: Any] ?? [:]
-            let lang = tags["language"] as? String ?? "und"
+            let lang = (tags["language"] as? String) ?? (tags["LANGUAGE"] as? String) ?? "und"
             let mappedLang = lMap[lang] ?? lang
             let codec = sub["codec_name"] as? String ?? ""
             let index = sub["index"] as? Int ?? 0
@@ -145,7 +111,11 @@ struct MediaProcessor {
                     
                     if outputFormat == "mp4" {
                         let p = tmpDir.appendingPathComponent("ext_\(cleaned.count).srt")
-                        if isAss { assToSrt(assPath: fullPath, srtPath: p) } else { try? fm.copyItem(at: fullPath, to: p) }
+                        if isAss {
+                            runCommand(ffmpeg, args: ["-y", "-i", fullPath.path, "-f", "srt", p.path])
+                        } else {
+                            try? fm.copyItem(at: fullPath, to: p)
+                        }
                         if let attr = try? fm.attributesOfItem(atPath: p.path), (attr[.size] as? Int64 ?? 0) > 0 {
                             let vp = p.path.replacingOccurrences(of: ".srt", with: ".vtt")
                             if let c = try? String(contentsOf: p, encoding: .utf8) {
@@ -160,7 +130,11 @@ struct MediaProcessor {
                             cleaned.append(["path": p.path, "lang": mappedLang, "codec": "ass"])
                         } else {
                             let p = tmpDir.appendingPathComponent("ext_\(cleaned.count).srt")
-                            if isAss { assToSrt(assPath: fullPath, srtPath: p) } else { try? fm.copyItem(at: fullPath, to: p) }
+                            if isAss {
+                                runCommand(ffmpeg, args: ["-y", "-i", fullPath.path, "-f", "srt", p.path])
+                            } else {
+                                try? fm.copyItem(at: fullPath, to: p)
+                            }
                             if let attr = try? fm.attributesOfItem(atPath: p.path), (attr[.size] as? Int64 ?? 0) > 0 {
                                 cleaned.append(["path": p.path, "lang": mappedLang, "codec": "srt"])
                             }
@@ -176,14 +150,23 @@ struct MediaProcessor {
             let tmpMp4 = tmpDir.appendingPathComponent("video_pure.mp4").path
             var cmd = ["-y", "-i", inputURL.path, "-map", "0:v:0"]
             if hasAudio { cmd.append(contentsOf: ["-map", "0:a?"]) }
-            cmd.append(contentsOf: ["-c", "copy", "-sn", "-map_metadata", "-1", "-movflags", "+faststart"])
+            
+            // Dolby Vision kayıplarını engellemek için -map_metadata:s:v 0:s:v ve -strict unofficial eklendi
+            cmd.append(contentsOf: ["-c", "copy", "-sn", "-map_metadata", "-1", "-map_metadata:s:v", "0:s:v", "-map_metadata:s:a", "0:s:a", "-movflags", "+faststart", "-strict", "unofficial"])
             if isHevc { cmd.append(contentsOf: ["-tag:v", "hvc1"]) }
             cmd.append(tmpMp4)
             runCommand(ffmpeg, args: cmd)
             
             var box = ["-brand", "mp42", "-ab", "isom", "-new", "-tight", "-inter", "500"]
             box.append(contentsOf: ["-add", "\(tmpMp4)#video:forcesync:name="])
-            if hasAudio { box.append(contentsOf: ["-add", "\(tmpMp4)#audio:name="]) }
+            
+            // Sadece ilk sesi değil, tüm sesleri döngüyle dil kodlarıyla al
+            for (i, aStream) in audioStreams.enumerated() {
+                let tags = aStream["tags"] as? [String: Any] ?? [:]
+                let lang = (tags["language"] as? String) ?? (tags["LANGUAGE"] as? String) ?? "und"
+                let mappedLang = lMap[lang] ?? lang
+                box.append(contentsOf: ["-add", "\(tmpMp4)#audio:\(i+1):lang=\(mappedLang):name="])
+            }
             
             for (i, c) in cleaned.enumerated() {
                 let dis = i > 0 ? ":disable" : ""
@@ -230,14 +213,17 @@ struct MediaProcessor {
             let tmpMkv = tmpDir.appendingPathComponent("stage1.mkv").path
             var cmd1 = ["-y", "-i", inputURL.path]
             for c in cleaned { cmd1.append(contentsOf: ["-i", c["path"]!]) }
-            cmd1.append(contentsOf: ["-map", "0:v:0", "-map", "0:a?"])
+            cmd1.append(contentsOf: ["-map", "0:v:0"])
+            if hasAudio { cmd1.append(contentsOf: ["-map", "0:a?"]) }
             for (i, c) in cleaned.enumerated() {
                 cmd1.append(contentsOf: ["-map", "\(i+1):0"])
                 let codec = c["codec"] == "ass" ? "copy" : "subrip"
                 cmd1.append(contentsOf: ["-c:s:\(i)", codec])
                 cmd1.append(contentsOf: ["-metadata:s:s:\(i)", "language=\(c["lang"]!)"])
             }
-            cmd1.append(contentsOf: ["-c:v", "copy", "-c:a", "copy", "-map_metadata", "-1", "-map_chapters", "-1", tmpMkv])
+            
+            // MKV tarafında metadata kayıplarını düzelt
+            cmd1.append(contentsOf: ["-c:v", "copy", "-c:a", "copy", "-map_metadata", "-1", "-map_metadata:s:v", "0:s:v", "-map_metadata:s:a", "0:s:a", "-map_chapters", "-1", "-strict", "unofficial", tmpMkv])
             runCommand(ffmpeg, args: cmd1)
             
             var cmd2 = ["-y", "-i", tmpMkv, "-i", inputURL.path, "-map", "0", "-c", "copy", "-map_metadata:g", "-1", "-map_chapters", "1"]
