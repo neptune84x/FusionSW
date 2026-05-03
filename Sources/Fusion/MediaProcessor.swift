@@ -19,10 +19,12 @@ struct MediaProcessor {
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = pipe
-        try? task.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-        return (task.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+        do {
+            try task.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            task.waitUntilExit()
+            return (task.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+        } catch { return (-1, error.localizedDescription) }
     }
 
     func run() async {
@@ -46,14 +48,14 @@ struct MediaProcessor {
               let streams = info["streams"] as? [[String: Any]] else { return }
         
         let audioStreams = streams.filter { ($0["codec_type"] as? String) == "audio" }
-        let subtitleStreams = streams.filter { ($0["codec_type"] as? String) == "subtitle" }
+        let subStreams = streams.filter { ($0["codec_type"] as? String) == "subtitle" }
         let isHevc = streams.contains { ($0["codec_type"] as? String) == "video" && ($0["codec_name"] as? String) == "hevc" }
         
         let lMap = ["tr":"tur","en":"eng","ru":"rus","jp":"jpn","de":"ger","fr":"fra","es":"spa","it":"ita"]
-        var processedSubs: [[String: String]] = []
         
-        // Altyazı İşleme (İtalik temizleme kaldırıldı, FFmpeg hallediyor)
-        for (i, sub) in subtitleStreams.enumerated() {
+        // 1. Adım: Tüm altyazıları dilleriyle çıkar
+        var processedSubs: [[String: String]] = []
+        for (i, sub) in subStreams.enumerated() {
             let tags = sub["tags"] as? [String: Any] ?? [:]
             let lang = (tags["language"] as? String) ?? "und"
             let index = sub["index"] as? Int ?? 0
@@ -71,26 +73,25 @@ struct MediaProcessor {
                 processedSubs.append(["path": p.path, "lang": lMap[lang] ?? lang])
             }
         }
-        
+
+        // 2. Adım: Ana video ve ses izlerini ayırırken mapping hatasını önle
         if outputFormat == "mp4" {
-            // Video ve tüm sesleri ayırırken Dolby Vision ve Dil Kodlarını koru
-            let tmpMp4 = tmpDir.appendingPathComponent("temp.mp4").path
-            var ffArgs = ["-y", "-i", inputURL.path, "-map", "0:v:0"]
+            let tmpMp4 = tmpDir.appendingPathComponent("temp_mux.mp4").path
             
-            // Tüm ses izlerini tek tek map'le (Karışıklığı önler)
+            // FFmpeg ile her ses izini AYRI AYRI map'liyoruz. Karışıklığı bu önler.
+            var ffArgs = ["-y", "-i", inputURL.path, "-map", "0:v:0"]
             for i in 0..<audioStreams.count {
                 ffArgs.append(contentsOf: ["-map", "0:a:\(i)"])
             }
-            
             ffArgs.append(contentsOf: ["-c", "copy", "-map_metadata", "0", "-movflags", "+faststart", "-strict", "unofficial"])
             if isHevc { ffArgs.append(contentsOf: ["-tag:v", "hvc1"]) }
             ffArgs.append(tmpMp4)
             runCommand(ffmpeg, args: ffArgs)
             
-            // MP4Box ile paketle
+            // MP4Box ile paketleme
             var box = ["-brand", "mp42", "-new", "-add", "\(tmpMp4)#video:name="]
             
-            // Sesleri dilleriyle ekle
+            // TrackID kullanarak sesleri ekle (Track 1 video, Track 2+ sesler)
             for (i, a) in audioStreams.enumerated() {
                 let tags = a["tags"] as? [String: Any] ?? [:]
                 let lang = lMap[(tags["language"] as? String) ?? "und"] ?? "und"
@@ -113,7 +114,7 @@ struct MediaProcessor {
                 mkvArgs.append(contentsOf: ["-map", "\(i+1):0", "-c:s:\(i)", "subrip"])
                 mkvArgs.append(contentsOf: ["-metadata:s:s:\(i)", "language=\(processedSubs[i]["lang"]!)"])
             }
-            mkvArgs.append(contentsOf: ["-c:v", "copy", "-c:a", "copy", "-map_metadata", "0", "-strict", "unofficial", outFile])
+            mkvArgs.append(contentsOf: ["-c:v", "copy", "-c:a", "copy", "-map_metadata", "0", outFile])
             runCommand(ffmpeg, args: mkvArgs)
         }
         try? fm.removeItem(at: tmpDir)
