@@ -5,16 +5,17 @@ struct FusionApp: App {
     @StateObject private var queueManager = QueueManager()
 
     var body: some Scene {
-        WindowGroup("Queue") { // Pencere başlığı Subler gibi "Queue"
+        WindowGroup {
             ContentView()
                 .environmentObject(queueManager)
-                // Subler'ın standart dar-dikey pencere boyutu
-                .frame(minWidth: 350, maxWidth: 500, minHeight: 450, maxHeight: 800)
+                // Subler'ın tipik dikey ve dar Queue pencere boyutu
+                .frame(minWidth: 420, maxWidth: 550, minHeight: 450, maxHeight: 900)
                 .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                     queueManager.handleDrop(providers: providers)
                 }
         }
         .windowStyle(.automatic)
-        .windowToolbarStyle(.unified(showsTitle: false)) // Başlığı gizle, sadece butonlar
+        // Toolbar'ı tamamen kaldırıyoruz, içeriği ContentView içinde özel çizeceğiz
+        .windowToolbarStyle(.unified(showsTitle: false)) 
     }
 }
