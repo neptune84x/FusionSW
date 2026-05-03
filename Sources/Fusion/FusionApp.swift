@@ -8,9 +8,10 @@ struct FusionApp: App {
         WindowGroup("Queue") {
             ContentView()
                 .environmentObject(queueManager)
+                // Subler pencere boyutu: yaklaşık 480x500, minimum 380x250
                 .frame(
-                    minWidth:   380, idealWidth: 440, maxWidth: 800,
-                    minHeight:  200, idealHeight: 420
+                    minWidth:    380, idealWidth:  480, maxWidth:  900,
+                    minHeight:   250, idealHeight: 500
                 )
                 .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                     queueManager.handleDrop(providers: providers)
@@ -25,14 +26,18 @@ struct FusionApp: App {
                 Divider()
                 Button("Remove Selected") { queueManager.removeSelected() }
                     .keyboardShortcut(.delete, modifiers: [])
+                    .disabled(!queueManager.hasSelection)
                 Button("Remove Completed Items") { queueManager.removeCompleted() }
+                    .disabled(!queueManager.hasCompleted)
                 Divider()
-                Button("Reveal in Finder") { queueManager.revealInFinder() }
+                Button("Reveal in Finder") { queueManager.revealSelected() }
                     .keyboardShortcut("r", modifiers: .command)
+                    .disabled(!queueManager.hasSelection)
             }
             CommandMenu("Queue") {
                 Button("Start") { queueManager.startProcessing() }
                     .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(queueManager.isProcessing)
             }
         }
     }

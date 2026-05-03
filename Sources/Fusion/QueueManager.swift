@@ -39,7 +39,12 @@ class QueueManager: ObservableObject {
         return true
     }
 
-    // MARK: – Queue operations
+    // MARK: – Seçim yardımcıları
+    var hasSelection: Bool { !selection.isEmpty }
+    var hasCompleted: Bool { items.contains(where: { $0.status == .done || $0.status == .failed }) }
+    var selectedItems: [QueueItem] { items.filter { selection.contains($0.id) } }
+
+    // MARK: – Queue işlemleri
     func removeSelected() {
         items.removeAll { selection.contains($0.id) }
         selection.removeAll()
@@ -57,13 +62,17 @@ class QueueManager: ObservableObject {
         recalcProgress()
     }
 
-    func revealInFinder() {
-        guard let id = selection.first,
-              let item = items.first(where: { $0.id == id }) else { return }
+    func revealSelected() {
+        let urls = selectedItems.map { $0.url }
+        guard !urls.isEmpty else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
+    func revealItem(_ item: QueueItem) {
         NSWorkspace.shared.activateFileViewerSelecting([item.url])
     }
 
-    // MARK: – Processing
+    // MARK: – İşleme
     func startProcessing() {
         guard !isProcessing else { return }
         guard items.contains(where: { $0.status == .waiting }) else { return }
@@ -83,7 +92,6 @@ class QueueManager: ObservableObject {
         let url = items[index].url
         recalcProgress()
 
-        // Arka planda çalıştır, UI donmasın
         let success: Bool = await Task.detached(priority: .userInitiated) {
             let p = MediaProcessor(inputURL: url)
             return await p.run()
