@@ -5,11 +5,13 @@ struct FusionApp: App {
     @StateObject private var queueManager = QueueManager()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("Queue") {
             ContentView()
                 .environmentObject(queueManager)
-                .frame(minWidth: 380, idealWidth: 420, maxWidth: 700,
-                       minHeight: 250, idealHeight: 450)
+                .frame(
+                    minWidth:   380, idealWidth: 440, maxWidth: 800,
+                    minHeight:  200, idealHeight: 420
+                )
                 .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                     queueManager.handleDrop(providers: providers)
                 }
@@ -23,7 +25,10 @@ struct FusionApp: App {
                 Divider()
                 Button("Remove Selected") { queueManager.removeSelected() }
                     .keyboardShortcut(.delete, modifiers: [])
-                Button("Clear Completed") { queueManager.removeCompleted() }
+                Button("Remove Completed Items") { queueManager.removeCompleted() }
+                Divider()
+                Button("Reveal in Finder") { queueManager.revealInFinder() }
+                    .keyboardShortcut("r", modifiers: .command)
             }
             CommandMenu("Queue") {
                 Button("Start") { queueManager.startProcessing() }

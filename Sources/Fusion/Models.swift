@@ -1,6 +1,6 @@
 import Foundation
 
-enum JobStatus {
+enum JobStatus: Equatable {
     case waiting, working, done, failed
 }
 

@@ -7,128 +7,176 @@ struct ContentView: View {
     var body: some View {
         List(selection: $queueManager.selection) {
             ForEach(queueManager.items) { item in
-                HStack(spacing: 8) {
-                    Image(systemName: statusIcon(for: item.status))
-                        .foregroundColor(statusColor(for: item.status))
-                        .font(.system(size: 13))
-                        .frame(width: 16)
-                    Text(item.filename)
-                        .font(.system(size: 13))
-                    Spacer()
-                    if item.status == .working {
-                        ProgressView()
-                            .progressViewStyle(.circular)
-                            .scaleEffect(0.6)
-                            .frame(width: 16, height: 16)
+                ItemRow(item: item)
+                    .tag(item.id)
+                    .contextMenu {
+                        // Seçili item varsa
+                        if queueManager.selection.contains(item.id) || queueManager.selection.isEmpty {
+                            Button("Reveal in Finder") {
+                                NSWorkspace.shared.activateFileViewerSelecting([item.url])
+                            }
+                            Divider()
+                            Button("Remove from queue") {
+                                if queueManager.selection.contains(item.id) {
+                                    queueManager.removeSelected()
+                                } else {
+                                    queueManager.removeSingle(id: item.id)
+                                }
+                            }
+                        }
+                        Button("Remove completed items") {
+                            queueManager.removeCompleted()
+                        }
+                        .disabled(!queueManager.items.contains(where: { $0.status == .done || $0.status == .failed }))
                     }
-                }
-                .padding(.vertical, 3)
-                .tag(item.id)
             }
         }
         .listStyle(.inset(alternatesRowBackgrounds: true))
         .toolbar {
+            // Subler gibi: simge üstte, metin altta — label kullan
             ToolbarItemGroup(placement: .primaryAction) {
                 Button(action: { queueManager.startProcessing() }) {
-                    Image(systemName: "play.fill")
+                    Label("Start", systemImage: "play.fill")
                 }
-                .help("Start")
-                .disabled(queueManager.isProcessing || queueManager.items.filter { $0.status == .waiting }.isEmpty)
+                .help("Start processing queue")
+                .disabled(queueManager.isProcessing ||
+                          !queueManager.items.contains(where: { $0.status == .waiting }))
 
                 Button(action: { showingSettings.toggle() }) {
-                    Image(systemName: "gearshape")
+                    Label("Settings", systemImage: "gearshape")
                 }
-                .help("Settings")
+                .help("Queue settings")
                 .popover(isPresented: $showingSettings, arrowEdge: .bottom) {
                     SettingsView()
                 }
 
                 Button(action: { queueManager.openFiles() }) {
-                    Image(systemName: "doc.badge.plus")
+                    Label("Add Item", systemImage: "doc.badge.plus")
                 }
-                .help("Add Item")
+                .help("Add files to queue")
             }
         }
         .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 0) {
-                Divider()
-                HStack(spacing: 8) {
-                    Text(statusText)
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    if queueManager.isProcessing || (queueManager.progress > 0 && queueManager.progress < 1) {
-                        ProgressView(value: queueManager.progress)
-                            .progressViewStyle(.linear)
-                            .frame(width: 120)
-                        Text("\(Int(queueManager.progress * 100))%")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(.secondary)
-                            .frame(width: 32)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color(NSColor.windowBackgroundColor))
-            }
-        }
-    }
-
-    var statusText: String {
-        let total = queueManager.items.count
-        let done = queueManager.items.filter { $0.status == .done }.count
-        if queueManager.isProcessing {
-            return "\(done)/\(total) item işleniyor…"
-        }
-        return "\(total) item\(total == 1 ? "" : "s") in queue"
-    }
-
-    func statusIcon(for status: JobStatus) -> String {
-        switch status {
-        case .waiting: return "circle"
-        case .working: return "arrow.clockwise.circle.fill"
-        case .done: return "checkmark.circle.fill"
-        case .failed: return "xmark.circle.fill"
-        }
-    }
-
-    func statusColor(for status: JobStatus) -> Color {
-        switch status {
-        case .waiting: return Color(NSColor.tertiaryLabelColor)
-        case .working: return .orange
-        case .done: return .green
-        case .failed: return .red
+            StatusBar(
+                count: queueManager.items.count,
+                isProcessing: queueManager.isProcessing,
+                progress: queueManager.progress
+            )
         }
     }
 }
 
-struct SettingsView: View {
-    @AppStorage("output_format") var outputFormat: String = "mkv"
-    @AppStorage("convert_srt") var convertSrt: Bool = true
-    @AppStorage("load_ext_subs") var loadExtSubs: Bool = true
+// MARK: – Satır görünümü
+struct ItemRow: View {
+    let item: QueueItem
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Output Format")
-                .font(.headline)
-            Picker("", selection: $outputFormat) {
-                Text("MKV").tag("mkv")
-                Text("MP4").tag("mp4")
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+        HStack(spacing: 8) {
+            statusView
+            Text(item.filename)
+                .font(.system(size: 13))
+            Spacer()
+        }
+        .padding(.vertical, 3)
+    }
 
-            if outputFormat == "mkv" {
-                Toggle("Convert subtitles to SRT", isOn: $convertSrt)
-            }
+    @ViewBuilder
+    private var statusView: some View {
+        switch item.status {
+        case .waiting:
+            Image(systemName: "circle")
+                .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                .font(.system(size: 13))
+                .frame(width: 16)
+        case .working:
+            ProgressView()
+                .progressViewStyle(.circular)
+                .scaleEffect(0.55)
+                .frame(width: 16, height: 16)
+        case .done:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(.green)
+                .font(.system(size: 13))
+                .frame(width: 16)
+        case .failed:
+            Image(systemName: "xmark.circle.fill")
+                .foregroundColor(.red)
+                .font(.system(size: 13))
+                .frame(width: 16)
+        }
+    }
+}
 
+// MARK: – Alt status bar (Subler birebir: N item in queue | spinner)
+struct StatusBar: View {
+    let count: Int
+    let isProcessing: Bool
+    let progress: Double
+
+    var body: some View {
+        VStack(spacing: 0) {
             Divider()
+            HStack(spacing: 6) {
+                Text(count == 1 ? "1 item in queue" : "\(count) items in queue")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                Spacer()
+                if isProcessing {
+                    // Subler'da sadece küçük dönen simge var, metin yok
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .scaleEffect(0.5)
+                        .frame(width: 14, height: 14)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(Color(NSColor.windowBackgroundColor))
+        }
+    }
+}
 
-            Text("Subtitles")
+// MARK: – Ayarlar popover (Subler'a benzer düzen)
+struct SettingsView: View {
+    @AppStorage("output_format") var outputFormat: String = "mkv"
+    @AppStorage("convert_srt")   var convertSrt:   Bool   = true
+    @AppStorage("load_ext_subs") var loadExtSubs:  Bool   = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Başlık satırı
+            Text("Settings")
                 .font(.headline)
-            Toggle("Load external subtitles", isOn: $loadExtSubs)
+                .padding(.bottom, 12)
+
+            Group {
+                Text("File Type")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+                Picker("", selection: $outputFormat) {
+                    Text("MKV").tag("mkv")
+                    Text("MP4").tag("mp4")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(.bottom, 10)
+
+                Divider().padding(.bottom, 10)
+
+                Text("Subtitles")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+
+                Toggle("Load external subtitles", isOn: $loadExtSubs)
+                    .padding(.top, 4)
+
+                if outputFormat == "mkv" {
+                    Toggle("Convert subtitles to SRT", isOn: $convertSrt)
+                        .padding(.top, 4)
+                }
+            }
         }
         .padding(16)
-        .frame(width: 260)
+        .frame(width: 280)
     }
 }
