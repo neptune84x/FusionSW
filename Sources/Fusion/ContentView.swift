@@ -5,82 +5,72 @@ struct ContentView: View {
     @State private var showingSettings = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Toolbar
-            HStack {
-                Text("Queue")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.primary)
-                Spacer()
-                
-                ToolbarButton(icon: "play.fill", label: "Start") {
-                    queueManager.startProcessing()
+        List(selection: $queueManager.selection) {
+            ForEach(queueManager.items) { item in
+                HStack(spacing: 10) {
+                    Image(systemName: statusIcon(for: item.status))
+                        .foregroundColor(statusColor(for: item.status))
+                        .font(.system(size: 14))
+                    Text(item.filename)
+                        .font(.system(size: 13))
+                    Spacer()
                 }
-                ToolbarButton(icon: "gearshape.fill", label: "Settings") {
-                    showingSettings.toggle()
+                .padding(.vertical, 4)
+                .tag(item.id)
+            }
+        }
+        // Subler'daki gibi ardışık renkli satırlar
+        .listStyle(.inset(alternatesRowBackgrounds: true))
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button(action: { queueManager.startProcessing() }) {
+                    Label("Start", systemImage: "play.fill")
+                }
+                Button(action: { showingSettings.toggle() }) {
+                    Label("Settings", systemImage: "gearshape")
                 }
                 .popover(isPresented: $showingSettings, arrowEdge: .bottom) {
                     SettingsView()
                 }
-                ToolbarButton(icon: "plus.circle.fill", label: "Add Item") {
-                    queueManager.openFiles()
+                Button(action: { queueManager.openFiles() }) {
+                    Label("Add Item", systemImage: "plus")
                 }
             }
-            .padding(.horizontal, 16).frame(height: 60)
-            .background(Color(NSColor.windowBackgroundColor))
-            Divider()
-            
-            // Queue List
-            List(selection: $queueManager.selection) {
-                ForEach(queueManager.items) { item in
-                    HStack(spacing: 12) {
-                        Circle()
-                            .fill(statusColor(for: item.status))
-                            .frame(width: 10, height: 10)
-                        Text(item.filename).font(.system(size: 13))
-                        Spacer()
-                    }
-                    .padding(.vertical, 4).tag(item.id)
-                }
-            }
-            .listStyle(.inset)
-            Divider()
-            
-            // Footer
+        }
+        .safeAreaInset(edge: .bottom) {
             HStack {
-                Text("\(queueManager.items.count) item(s) in queue.")
-                    .font(.system(size: 11)).foregroundColor(.secondary)
+                Text("\(queueManager.items.count) item(s) in queue")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
                 Spacer()
-                ProgressView(value: queueManager.progress)
-                    .progressViewStyle(.linear)
-                    .frame(width: 130)
+                if queueManager.progress > 0 && queueManager.progress < 1 {
+                    ProgressView(value: queueManager.progress)
+                        .progressViewStyle(.linear)
+                        .frame(width: 100)
+                        .scaleEffect(x: 1, y: 0.8, anchor: .center)
+                }
             }
-            .padding(.horizontal, 16).frame(height: 30)
-            .background(Color(NSColor.controlBackgroundColor))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color(NSColor.windowBackgroundColor))
+            .overlay(Divider(), alignment: .top)
         }
     }
     
+    func statusIcon(for status: JobStatus) -> String {
+        switch status {
+        case .waiting: return "circle"
+        case .working: return "play.circle.fill"
+        case .done: return "checkmark.circle.fill"
+        }
+    }
+
     func statusColor(for status: JobStatus) -> Color {
         switch status {
         case .waiting: return Color.gray.opacity(0.5)
         case .working: return Color.orange
         case .done: return Color.green
         }
-    }
-}
-
-struct ToolbarButton: View {
-    let icon: String, label: String, action: () -> Void
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 16))
-                Text(label).font(.system(size: 10))
-            }
-            .frame(width: 60, height: 50)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 }
 
@@ -105,6 +95,7 @@ struct SettingsView: View {
             Text("Subtitles:").font(.headline)
             Toggle("Load external subtitles", isOn: $loadExtSubs)
         }
-        .padding().frame(width: 250)
+        .padding()
+        .frame(width: 250)
     }
 }
