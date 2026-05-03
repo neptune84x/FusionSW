@@ -11,12 +11,15 @@ struct FusionApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(queueManager)
-                .frame(minWidth: 480, idealWidth: 560, minHeight: 300, idealHeight: 420)
+                // Subler benzeri dar ve dikey pencere boyutu
+                .frame(minWidth: 400, idealWidth: 450, minHeight: 300, idealHeight: 500)
                 .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                     queueManager.handleDrop(providers: providers)
                 }
         }
-        .windowStyle(.hiddenTitleBar)
+        // Native macOS title bar ve toolbar görünümü
+        .windowStyle(.automatic)
+        .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Add to Queue…") { queueManager.openFiles() }
