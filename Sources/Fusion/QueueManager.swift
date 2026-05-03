@@ -6,8 +6,8 @@ class QueueManager: ObservableObject {
     @Published var items: [QueueItem] = []
     @Published var selection = Set<UUID>()
     @Published var progress: Double = 0.0
-    private var isProcessing = false
-    
+    @Published var isProcessing = false
+
     func openFiles() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
@@ -20,7 +20,7 @@ class QueueManager: ObservableObject {
             }
         }
     }
-    
+
     func handleDrop(providers: [NSItemProvider]) -> Bool {
         for provider in providers {
             provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { (urlData, _) in
@@ -35,38 +35,50 @@ class QueueManager: ObservableObject {
         }
         return true
     }
-    
+
     func removeSelected() {
         items.removeAll { selection.contains($0.id) }
         selection.removeAll()
     }
-    func removeCompleted() { items.removeAll { $0.status == .done } }
-    
+
+    func removeCompleted() {
+        items.removeAll { $0.status == .done }
+    }
+
     func startProcessing() {
         guard !isProcessing else { return }
-        isProcessing = true; progress = 0.0
+        isProcessing = true
+        updateProgress()
         Task { await processNext() }
     }
-    
+
     @MainActor
     private func processNext() async {
         guard let index = items.firstIndex(where: { $0.status == .waiting }) else {
-            isProcessing = false; return
+            isProcessing = false
+            updateProgress()
+            return
         }
-        
+
         items[index].status = .working
         let url = items[index].url
-        
-        // İşlemi arka planda (Task.detached) çalıştır
-        await Task.detached {
+        updateProgress()
+
+        let success = await Task.detached(priority: .userInitiated) {
             let processor = MediaProcessor(inputURL: url)
-            await processor.run()
+            return await processor.run()
         }.value
-        
-        items[index].status = .done
-        let doneCount = items.filter { $0.status == .done }.count
-        progress = items.isEmpty ? 0 : Double(doneCount) / Double(items.count)
-        
+
+        items[index].status = success ? .done : .failed
+        updateProgress()
+
         await processNext()
+    }
+
+    private func updateProgress() {
+        let total = items.count
+        guard total > 0 else { progress = 0; return }
+        let done = items.filter { $0.status == .done || $0.status == .failed }.count
+        progress = Double(done) / Double(total)
     }
 }

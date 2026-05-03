@@ -3,23 +3,19 @@ import SwiftUI
 @main
 struct FusionApp: App {
     @StateObject private var queueManager = QueueManager()
-    @AppStorage("output_format") var outputFormat: String = "mkv"
-    @AppStorage("convert_srt") var convertSrt: Bool = true
-    @AppStorage("load_ext_subs") var loadExtSubs: Bool = true
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(queueManager)
-                // Subler benzeri dar ve dikey pencere boyutu
-                .frame(minWidth: 400, idealWidth: 450, minHeight: 300, idealHeight: 500)
+                .frame(minWidth: 380, idealWidth: 420, maxWidth: 700,
+                       minHeight: 250, idealHeight: 450)
                 .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                     queueManager.handleDrop(providers: providers)
                 }
         }
-        // Native macOS title bar ve toolbar görünümü
         .windowStyle(.automatic)
-        .windowToolbarStyle(.unified)
+        .windowToolbarStyle(.unified(showsTitle: true))
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Add to Queue…") { queueManager.openFiles() }
