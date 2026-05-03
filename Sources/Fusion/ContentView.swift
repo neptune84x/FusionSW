@@ -6,19 +6,19 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Subler Tarzı Üst Panel
+            // Subler Tarzı Üst Panel (Header)
             HStack(spacing: 0) {
                 Spacer()
-                SublerButton(icon: "play.fill", label: "Start") {
+                SublerActionButton(icon: "play.fill", label: "Start") {
                     queueManager.startProcessing()
                 }
-                SublerButton(icon: "gearshape", label: "Settings") {
+                SublerActionButton(icon: "gearshape", label: "Settings") {
                     showingSettings.toggle()
                 }
                 .popover(isPresented: $showingSettings, arrowEdge: .bottom) {
                     SettingsView()
                 }
-                SublerButton(icon: "doc.badge.plus", label: "Add Item") {
+                SublerActionButton(icon: "doc.badge.plus", label: "Add Item") {
                     queueManager.openFiles()
                 }
             }
@@ -28,10 +28,10 @@ struct ContentView: View {
             
             Divider()
             
-            // Subler Tarzı Liste
+            // Dosya Listesi
             List(selection: $queueManager.selection) {
                 ForEach(queueManager.items) { item in
-                    HStack(spacing: 8) {
+                    HStack(spacing: 12) {
                         Image(systemName: statusIcon(for: item.status))
                             .foregroundColor(statusColor(for: item.status))
                             .font(.system(size: 14, weight: .bold))
@@ -42,9 +42,8 @@ struct ContentView: View {
                         
                         Spacer()
                         
-                        // Küçük bilgi ikonu (Subler'daki gibi)
                         Image(systemName: "info.circle.fill")
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.secondary.opacity(0.6))
                             .font(.system(size: 12))
                     }
                     .padding(.vertical, 2)
@@ -53,23 +52,22 @@ struct ContentView: View {
             }
             .listStyle(.inset(alternatesRowBackgrounds: true))
             
-            // Alt Bilgi Barı ve Progress
-            VStack(spacing: 4) {
+            // Subler Tarzı Alt Panel (Status & Progress)
+            VStack(spacing: 0) {
                 Divider()
                 HStack {
                     Text("\(queueManager.items.count) item in queue")
                         .font(.system(size: 11))
                         .foregroundColor(.primary)
                     Spacer()
-                    // Progress her zaman görünür, işlem yoksa %0
+                    // İlerleme çubuğu her zaman yerinde durur
                     ProgressView(value: queueManager.progress)
                         .progressViewStyle(.linear)
-                        .frame(width: 80)
+                        .frame(width: 100)
                         .scaleEffect(x: 1, y: 0.5)
                 }
                 .padding(.horizontal, 12)
-                .padding(.bottom, 8)
-                .padding(.top, 4)
+                .padding(.vertical, 8)
             }
             .background(Color(NSColor.windowBackgroundColor))
         }
@@ -85,15 +83,15 @@ struct ContentView: View {
 
     func statusColor(for status: JobStatus) -> Color {
         switch status {
-        case .waiting: return .secondary.opacity(0.4)
+        case .waiting: return .secondary.opacity(0.3)
         case .working: return .orange
         case .done: return .green
         }
     }
 }
 
-// Subler'ın ikon altı metin tasarımlı butonu
-struct SublerButton: View {
+// Subler ikon+metin butonu
+struct SublerActionButton: View {
     let icon: String
     let label: String
     let action: () -> Void
@@ -128,10 +126,8 @@ struct SettingsView: View {
             }
             .pickerStyle(.segmented)
             
-            if outputFormat == "mkv" {
-                Toggle("Convert ASS to SRT", isOn: $convertSrt)
-            }
-            Toggle("Load External Subs", isOn: $loadExtSubs)
+            Toggle("Convert Subtitles to SRT", isOn: $convertSrt)
+            Toggle("Load External Subtitles", isOn: $loadExtSubs)
         }
         .padding()
         .frame(width: 220)
